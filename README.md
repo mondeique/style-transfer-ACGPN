@@ -1,2 +1,2 @@
-# img2img-translation
-clothes color change with style-guided unpaired image to image translation 
+# style-transfer
+clothes color change with style-tranfer Deep Learning by using VGG19 & GramMatrix
