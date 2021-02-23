@@ -87,6 +87,18 @@ def define_G(input_nc, output_nc, ngf, netG, norm='batch', use_dropout=False, in
         raise NotImplementedError('Generator model name [%s] is not recognized' % netG)
     return init_net(net, init_type, init_gain, gpu_ids)
 
+def define_D(input_nc, ndf, netD, n_layers_D=3, norm='batch', use_sigmoid=False, init_type='normal', init_gain=0.02, gpu_ids=[]):
+    net = None
+    norm_layer = get_norm_layer(norm_type=norm)
+
+    if netD == 'basic':
+        net = NLayerDiscriminator(input_nc, ndf, n_layers=3, norm_layer=norm_layer, use_sigmoid=use_sigmoid)
+    elif netD == 'set':
+        net = NLayerSetDiscriminator(input_nc, ndf, n_layers=3, norm_layer=norm_layer, use_sigmoid=use_sigmoid)
+    else:
+        raise NotImplementedError('Discriminator model name [%s] is not recognized' % net)
+    return init_net(net, init_type, init_gain, gpu_ids)
+
 ##############################################################################
 # Classes
 ##############################################################################
@@ -132,8 +144,7 @@ class StyleTransferLoss(nn.Module):
                 content_loss += self.loss(image_vgg_feature[key], fake_vgg_feature[key])
             else:
                 style_loss += 0.2 * self.loss(gram_matrix(cloth_vgg_feature[key]), gram_matrix(fake_vgg_feature[key]))
-        content_loss + 100 * style_loss
-        return content_loss, 100 * style_loss
+        return content_loss, 100000 * style_loss
 
 
 # Define spectral normalization layer
@@ -141,6 +152,7 @@ class StyleTransferLoss(nn.Module):
 # https://github.com/christiancosgrove/pytorch-spectral-normalization-gan/blob/master/spectral_normalization.py
 def l2normalize(v, eps=1e-12):
     return v / (v.norm() + eps)
+
 
 class SpectralNorm(nn.Module):
     def __init__(self, module, name='weight', power_iterations=1):
@@ -317,11 +329,8 @@ class ResnetSetGenerator(nn.Module):
         # self.decoder_seg = self.get_decoder(1, n_downsampling, 3 * ngf, norm_layer, use_bias)  # 3*ngf
 
         self.encoder_img = self.get_encoder(input_nc, n_downsampling, ngf, norm_layer, use_dropout, n_blocks, padding_type, use_bias)
-        self.encoder_cloth = self.get_encoder(input_nc, n_downsampling, ngf, norm_layer, use_dropout, n_blocks, padding_type, use_bias)
         self.encoder_input_cloth = self.get_encoder(input_nc, n_downsampling, ngf, norm_layer, use_dropout, n_blocks, padding_type, use_bias)
-        self.decoder_img = self.get_decoder(output_nc, n_downsampling, 3 * ngf, norm_layer, use_bias)  # 2*ngf
-        self.decoder_cloth = self.get_decoder(output_nc, n_downsampling, 3 * ngf, norm_layer, use_bias)  # 2*ngf
-        self.decoder_input_cloth = self.get_decoder(output_nc, n_downsampling, 3 * ngf, norm_layer, use_bias)  # 2*ngf
+        self.decoder_img = self.get_decoder(output_nc, n_downsampling, 2 * ngf, norm_layer, use_bias)  # 2*ngf
 
     def get_encoder(self, input_nc, n_downsampling, ngf, norm_layer, use_dropout, n_blocks, padding_type, use_bias):
         model = [nn.ReflectionPad2d(3),
@@ -356,8 +365,7 @@ class ResnetSetGenerator(nn.Module):
     def forward(self, inp):
         # split data
         img = inp[:, :self.input_nc, :, :]  # (B, CX, W, H)
-        cloth = inp[:, self.input_nc:self.input_nc * 2, :, :]
-        input_cloth = inp[:, self.input_nc * 2:self.input_nc * 3, :, :]
+        input_cloth = inp[:, self.input_nc:self.input_nc * 2, :, :]
         # segs = inp[:, self.input_nc:, :, :]  # (B, CA, W, H)
         # mean = (segs + 1).mean(0).mean(-1).mean(-1)
         # if mean.sum() == 0:
@@ -365,7 +373,6 @@ class ResnetSetGenerator(nn.Module):
 
         # run encoder
         enc_img = self.encoder_img(img)
-        enc_cloth = self.encoder_cloth(cloth)
         enc_input_cloth = self.encoder_input_cloth(input_cloth)
         # enc_segs = list()
         # for i in range(segs.size(1)):
@@ -376,7 +383,7 @@ class ResnetSetGenerator(nn.Module):
         # enc_segs_sum = torch.sum(enc_segs, dim=0, keepdim=True)  # aggregated set feature
 
         # run decoder
-        feat_img = torch.cat([enc_img, enc_cloth, enc_input_cloth], dim=1)
+        feat_img = torch.cat([enc_img, enc_input_cloth], dim=1)
         out_image = self.decoder_img(feat_img)
         # feat_cloth = torch.cat([enc_img, enc_cloth, enc_input_cloth], dim=1)
         # out_cloth = self.decoder_cloth(feat_cloth)
@@ -583,9 +590,9 @@ class NLayerSetDiscriminator(nn.Module):
         padw = 1
         self.feature_img = self.get_feature_extractor(input_nc, ndf, n_layers, kw, padw, norm_layer, use_bias)
         self.feature_cloth = self.get_feature_extractor(input_nc, ndf, n_layers, kw, padw, norm_layer, use_bias)
-        self.feature_img_mask = self.get_feature_extractor(1, ndf, n_layers, kw, padw, norm_layer, use_bias)
+        # self.feature_img_mask = self.get_feature_extractor(1, ndf, n_layers, kw, padw, norm_layer, use_bias)
         # self.feature_seg = self.get_feature_extractor(1, ndf, n_layers, kw, padw, norm_layer, use_bias)
-        self.classifier = self.get_classifier(3 * ndf, n_layers, kw, padw, norm_layer, use_sigmoid)  # 3*ndf
+        self.classifier = self.get_classifier(2 * ndf, n_layers, kw, padw, norm_layer, use_sigmoid)  # 3*ndf
 
     def get_feature_extractor(self, input_nc, ndf, n_layers, kw, padw, norm_layer, use_bias):
         model = [
@@ -625,7 +632,6 @@ class NLayerSetDiscriminator(nn.Module):
         # split data
         img = inp[:, :self.input_nc, :, :]  # (B, CX, W, H)
         cloth = inp[:, self.input_nc:self.input_nc * 2, :, :]
-        img_mask = inp[:, self.input_nc * 2, :, :].unsqueeze(dim=1)
         # segs = inp[:, self.input_nc:, :, :]  # (B, CA, W, H)
         # mean = (segs + 1).mean(0).mean(-1).mean(-1)
         # if mean.sum() == 0:
@@ -634,7 +640,6 @@ class NLayerSetDiscriminator(nn.Module):
         # run feature extractor
         feat_img = self.feature_img(img)
         feat_cloth = self.feature_cloth(cloth)
-        feat_mask = self.feature_img_mask(img_mask)
         # feat_segs = list()
         # for i in range(segs.size(1)):
         #     if mean[i] > 0:  # skip empty segmentation
@@ -644,7 +649,7 @@ class NLayerSetDiscriminator(nn.Module):
 
         # run classifier
         # feat = torch.cat([feat_img, feat_segs_sum], dim=1)
-        feat = torch.cat([feat_img, feat_cloth, feat_mask], dim=1)
+        feat = torch.cat([feat_img, feat_cloth], dim=1)
         out = self.classifier(feat)
         return out
 
