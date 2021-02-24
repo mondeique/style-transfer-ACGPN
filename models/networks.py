@@ -261,6 +261,7 @@ class ResnetGenerator(nn.Module):
     def forward(self, input):
         return self.model(input)
 
+
 class VGG19(torch.nn.Module):
     def __init__(self, requires_grad=False):
         super(VGG19, self).__init__()
@@ -271,17 +272,17 @@ class VGG19(torch.nn.Module):
         self.slice4 = torch.nn.Sequential()
         self.slice5 = torch.nn.Sequential()
         self.slice6 = torch.nn.Sequential()
-        for x in range(1):
+        for x in range(2):
             self.slice1.add_module(str(x), vgg_pretrained_features[x])
-        for x in range(1, 4):
+        for x in range(2, 7):
             self.slice2.add_module(str(x), vgg_pretrained_features[x])
-        for x in range(4, 7):
-            self.slice3.add_module(str(x), vgg_pretrained_features[x])
         for x in range(7, 12):
+            self.slice3.add_module(str(x), vgg_pretrained_features[x])
+        for x in range(12, 21):
             self.slice4.add_module(str(x), vgg_pretrained_features[x])
-        for x in range(12, 13):
+        for x in range(21, 23):
             self.slice5.add_module(str(x), vgg_pretrained_features[x])
-        for x in range(13, 16):
+        for x in range(23, 30):
             self.slice6.add_module(str(x), vgg_pretrained_features[x])
         if not requires_grad:
             for param in self.parameters():
@@ -301,7 +302,7 @@ class VGG19(torch.nn.Module):
         h = self.slice6(h)
         h_relu5_1 = h
         vgg_outputs = {
-            'relu1_1':h_relu1_1,
+            'relu1_1': h_relu1_1,
             'relu2_1': h_relu2_1,
             'relu3_1': h_relu3_1,
             'relu4_1': h_relu4_1,

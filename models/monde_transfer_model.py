@@ -46,7 +46,6 @@ class MondeTransferModel(BaseModel):
         # Code (paper): G_A (G), G_B (F), D_A (D_Y), D_B (D_X)
         self.netG_A = networks.define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, opt.norm,
                                          not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
-        # self.netG = networks.TransformerNet().cuda()
         self.vgg19 = networks.VGG19(requires_grad=False).cuda()
         use_sigmoid = opt.no_lsgan
         # self.netD_A = networks.define_D(opt.output_nc, opt.ndf, opt.netD,
@@ -91,8 +90,7 @@ class MondeTransferModel(BaseModel):
         self.image_mask = self.real_image.mul(self.real_image_mask)
         self.cloth_mask = self.real_cloth.mul(self.real_cloth_mask)
         self.input_mask = self.input_cloth.mul(self.input_cloth_mask)
-        self.fake_image = self.netG_A(self.image_mask)
-        # self.fake_image = self.netG_A(torch.cat([self.image_mask, self.input_mask], dim=1))
+        self.fake_image = self.netG_A(torch.cat([self.image_mask, self.input_mask], dim=1))
         # self.rec_image = self.netG_A(torch.cat([self.fake_image, self.cloth_mask], dim=1))
 
         # self.fake_A = self.netG_B(self.real_B)
