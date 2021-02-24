@@ -37,16 +37,16 @@ class MondeTransferModel(BaseModel):
         self.visual_names = visual_names_A
         # specify the models you want to save to the disk. The program will call base_model.save_networks and base_model.load_networks
         if self.isTrain:
-            self.model_names = ['G']
+            self.model_names = ['G_A']
         else:  # during test time, only load Gs
-            self.model_names = ['G']
+            self.model_names = ['G_A']
 
         # load/define networks
         # The naming conversion is different from those used in the paper
         # Code (paper): G_A (G), G_B (F), D_A (D_Y), D_B (D_X)
-        # self.netG_A = networks.define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, opt.norm,
-        #                                 not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
-        self.netG = networks.TransformerNet().cuda()
+        self.netG_A = networks.define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, opt.norm,
+                                         not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
+        # self.netG = networks.TransformerNet().cuda()
         self.vgg19 = networks.VGG19(requires_grad=False).cuda()
         use_sigmoid = opt.no_lsgan
         # self.netD_A = networks.define_D(opt.output_nc, opt.ndf, opt.netD,
@@ -62,9 +62,8 @@ class MondeTransferModel(BaseModel):
             self.criterionStyleTransfer = networks.StyleTransferLoss().to(self.device)
             # self.criterionGAN = networks.GANLoss(use_lsgan=not opt.no_lsgan).to(self.device)
             # self.criterionIdt = torch.nn.L1Loss()
-            # self.criterionSty = StyleLoss()
             # initialize optimizers
-            self.optimizer_G = torch.optim.Adam(self.netG.parameters(),
+            self.optimizer_G = torch.optim.Adam(self.netG_A.parameters(),
                                                 lr=opt.lr, betas=(opt.beta1, 0.999))
             # self.optimizer_D = torch.optim.Adam(self.netD_A.parameters(),
             #                                     lr=opt.lr, betas=(opt.beta1, 0.999))
@@ -84,15 +83,15 @@ class MondeTransferModel(BaseModel):
 
     def get_vgg_loss(self):
         image_features = self.vgg19(self.image_mask)
-        cloth_features = self.vgg19(self.cloth_mask)
+        input_features = self.vgg19(self.input_mask)
         fake_features = self.vgg19(self.fake_image)
-        return self.criterionStyleTransfer(image_features, cloth_features, fake_features)
+        return self.criterionStyleTransfer(image_features, input_features, fake_features)
 
     def forward(self):
         self.image_mask = self.real_image.mul(self.real_image_mask)
         self.cloth_mask = self.real_cloth.mul(self.real_cloth_mask)
         self.input_mask = self.input_cloth.mul(self.input_cloth_mask)
-        self.fake_image = self.netG(self.image_mask)
+        self.fake_image = self.netG_A(self.image_mask)
         # self.fake_image = self.netG_A(torch.cat([self.image_mask, self.input_mask], dim=1))
         # self.rec_image = self.netG_A(torch.cat([self.fake_image, self.cloth_mask], dim=1))
 

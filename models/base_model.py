@@ -116,7 +116,7 @@ class BaseModel():
 
     # load models from the disk
     def load_networks(self, epoch):
-        for name in ['G_A']:
+        for name in self.model_names:
             if isinstance(name, str):
                 load_filename = '%s_net_%s.pth' % (epoch, name)
                 load_path = os.path.join(self.save_dir, load_filename)

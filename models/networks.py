@@ -83,6 +83,8 @@ def define_G(input_nc, output_nc, ngf, netG, norm='batch', use_dropout=False, in
         net = ResnetGenerator(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout, n_blocks=9)
     elif netG == 'set':
         net = ResnetSetGenerator(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout, n_blocks=9)
+    elif netG == 'transform':
+        net = TransformerNet()
     else:
         raise NotImplementedError('Generator model name [%s] is not recognized' % netG)
     return init_net(net, init_type, init_gain, gpu_ids)
@@ -134,7 +136,7 @@ class StyleTransferLoss(nn.Module):
     def __init__(self):
         super(StyleTransferLoss, self).__init__()
         self.loss = nn.MSELoss()
-        self.features = ['relu1_1', 'relu2_1', 'relu3_1', 'relu4_1', 'relu5_1','relu4_2']
+        self.features = ['relu1_1', 'relu2_1', 'relu3_1', 'relu4_1', 'relu5_1', 'relu4_2']
 
     def __call__(self, image_vgg_feature, cloth_vgg_feature, fake_vgg_feature):
         content_loss = 0
@@ -144,7 +146,7 @@ class StyleTransferLoss(nn.Module):
                 content_loss += self.loss(image_vgg_feature[key], fake_vgg_feature[key])
             else:
                 style_loss += 0.2 * self.loss(gram_matrix(cloth_vgg_feature[key]), gram_matrix(fake_vgg_feature[key]))
-        return content_loss, 100 * style_loss
+        return content_loss, 100000 * style_loss
 
 
 # Define spectral normalization layer
