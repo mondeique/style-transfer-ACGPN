@@ -134,17 +134,15 @@ class StyleTransferLoss(nn.Module):
     def __init__(self):
         super(StyleTransferLoss, self).__init__()
         self.loss = nn.MSELoss()
-        self.features = ['relu1_1', 'relu2_1', 'relu3_1', 'relu4_1', 'relu5_1','relu4_2']
 
-    def __call__(self, image_vgg_feature, cloth_vgg_feature, fake_vgg_feature):
-        content_loss = 0
-        style_loss = 0
-        for key in self.features:
-            if key == 'relu4_2':
-                content_loss += self.loss(image_vgg_feature[key], fake_vgg_feature[key])
+    def __call__(self, image_vgg_feature, cloth_vgg_feature, fake_vgg_feature, phase = 'content'):
+        loss = 0
+        for index, value in enumerate(image_vgg_feature):
+            if phase == 'content':
+                loss += self.loss(image_vgg_feature[index], fake_vgg_feature[index])
             else:
-                style_loss += 0.2 * self.loss(gram_matrix(cloth_vgg_feature[key]), gram_matrix(fake_vgg_feature[key]))
-        return content_loss, 100000 * style_loss
+                loss += self.loss(gram_matrix(cloth_vgg_feature[index]), gram_matrix(fake_vgg_feature[index]))
+        return loss/len(image_vgg_feature)
 
 
 # Define spectral normalization layer
@@ -260,52 +258,27 @@ class ResnetGenerator(nn.Module):
         return self.model(input)
 
 class VGG19(torch.nn.Module):
-    def __init__(self, requires_grad=False):
+    def __init__(self, conv_list, requires_grad=False):
         super(VGG19, self).__init__()
-        vgg_pretrained_features = torchvision.models.vgg19(pretrained=True).features
-        self.slice1 = torch.nn.Sequential()
-        self.slice2 = torch.nn.Sequential()
-        self.slice3 = torch.nn.Sequential()
-        self.slice4 = torch.nn.Sequential()
-        self.slice5 = torch.nn.Sequential()
-        self.slice6 = torch.nn.Sequential()
-        for x in range(1):
-            self.slice1.add_module(str(x), vgg_pretrained_features[x])
-        for x in range(1, 4):
-            self.slice2.add_module(str(x), vgg_pretrained_features[x])
-        for x in range(4, 7):
-            self.slice3.add_module(str(x), vgg_pretrained_features[x])
-        for x in range(7, 12):
-            self.slice4.add_module(str(x), vgg_pretrained_features[x])
-        for x in range(12, 13):
-            self.slice5.add_module(str(x), vgg_pretrained_features[x])
-        for x in range(13, 16):
-            self.slice6.add_module(str(x), vgg_pretrained_features[x])
+        vgg_pretrained_features = torchvision.models.vgg19(pretrained=True).features.cuda()
+        self.feature_list = []
+        for index, value in enumerate(conv_list):
+            self.feature_list.append(torch.nn.Sequential())
+            if index == 0 :
+                for x in range(0, conv_list[index]):
+                    self.feature_list[index].add_module(str(x), vgg_pretrained_features[x])
+            else:
+                for x in range(conv_list[index-1], conv_list[index]):
+                    self.feature_list[index].add_module(str(x), vgg_pretrained_features[x])
         if not requires_grad:
             for param in self.parameters():
                 param.requires_grad = False
-
     def forward(self, X):
-        h = self.slice1(X)
-        h_relu1_1 = h
-        h = self.slice2(h)
-        h_relu2_1 = h
-        h = self.slice3(h)
-        h_relu3_1 = h
-        h = self.slice4(h)
-        h_relu4_1 = h
-        h = self.slice5(h)
-        h_relu4_2 = h
-        h = self.slice6(h)
-        h_relu5_1 = h
-        vgg_outputs = {
-            'relu1_1':h_relu1_1,
-            'relu2_1': h_relu2_1,
-            'relu3_1': h_relu3_1,
-            'relu4_1': h_relu4_1,
-            'relu4_2': h_relu4_2,
-            'relu5_1': h_relu5_1
-        }
+        vgg_outputs = []
+        feature = X
+        for i in self.feature_list:
+            feature = i(feature)
+            vgg_outputs.append(feature)
         return vgg_outputs
 
 # ResNet generator for "set" of instance attributes
