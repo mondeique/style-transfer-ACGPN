@@ -26,7 +26,7 @@ class MondeTransferModel(BaseModel):
         BaseModel.initialize(self, opt)
 
         # specify the training losses you want to print out. The program will call base_model.get_current_losses
-        self.loss_names = ['content_vgg', 'style_vgg', 'G']#'cycle_A','G_A_1', 'D_A',
+        self.loss_names = ['G', 'D_A','content_vgg']#'cycle_A','G_A_1', 'style_vgg', 'G_A_1',
         # specify the images G_A'you want to save/display. The program will call base_model.get_current_visuals
         visual_names_A = ['real_image', 'image_mask', 'input_mask', 'fake_image']#, 'cloth_mask', 'rec_image'
         # visual_names_B = ['real_B', 'fake_A', 'rec_B']
@@ -37,7 +37,7 @@ class MondeTransferModel(BaseModel):
         self.visual_names = visual_names_A
         # specify the models you want to save to the disk. The program will call base_model.save_networks and base_model.load_networks
         if self.isTrain:
-            self.model_names = ['G_A']#, 'D_A'
+            self.model_names = ['G_A', 'D_A']#
         else:  # during test time, only load Gs
             self.model_names = ['G_A']
 
@@ -49,13 +49,13 @@ class MondeTransferModel(BaseModel):
 
         #style, content transfer
         self.content_conv_list = [23]
-        self.style_conv_list = [4]
+        self.style_conv_list = [2,7,12,21,30]
         self.style_vgg19 = networks.VGG19(requires_grad=False, conv_list=self.style_conv_list).to(self.device)
         self.content_vgg19 = networks.VGG19(requires_grad=False, conv_list=self.content_conv_list).to(self.device)
-        # use_sigmoid = opt.no_lsgan
-        # self.netD_A = networks.define_D(opt.output_nc, opt.ndf, opt.netD,
-        #                                 opt.n_layers_D, opt.norm, use_sigmoid, opt.init_type, opt.init_gain,
-        #                                 self.gpu_ids)
+        use_sigmoid = opt.no_lsgan
+        self.netD_A = networks.define_D(opt.output_nc, opt.ndf, opt.netD,
+                                        opt.n_layers_D, opt.norm, use_sigmoid, opt.init_type, opt.init_gain,
+                                        self.gpu_ids)
         # self.netG_B = networks.define_G(opt.output_nc, opt.input_nc, opt.ngf, opt.netG, opt.norm,
         #                                not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
         if self.isTrain:
@@ -64,18 +64,18 @@ class MondeTransferModel(BaseModel):
             # define loss functions
             # self.criterionCycle = torch.nn.L1Loss()
             self.criterionStyleTransfer = networks.StyleTransferLoss().to(self.device)
-            # self.criterionGAN = networks.GANLoss(use_lsgan=not opt.no_lsgan).to(self.device)
+            self.criterionGAN = networks.GANLoss(use_lsgan=not opt.no_lsgan).to(self.device)
             # self.criterionIdt = torch.nn.L1Loss()
             # self.criterionSty = StyleLoss()
             # initialize optimizers
             self.optimizer_G = torch.optim.Adam(self.netG_A.parameters(),
                                                 lr=opt.lr, betas=(opt.beta1, 0.999))
-            # self.optimizer_D = torch.optim.Adam(self.netD_A.parameters(),
-            #                                     lr=opt.lr, betas=(opt.beta1, 0.999))
+            self.optimizer_D = torch.optim.Adam(self.netD_A.parameters(),
+                                                lr=opt.lr, betas=(opt.beta1, 0.999))
 
             self.optimizers = []
             self.optimizers.append(self.optimizer_G)
-            # self.optimizers.append(self.optimizer_D)
+            self.optimizers.append(self.optimizer_D)
 
     def set_input(self, input):
         self.real_image = input['base_image'].to(self.device)
@@ -149,7 +149,7 @@ class MondeTransferModel(BaseModel):
         self.loss_style_vgg, self.loss_content_vgg = self.get_vgg_loss()
         # # GAN loss D_B(G_B(B))
 
-        # self.loss_G_A_1 = self.criterionGAN(self.netD_A(torch.cat([self.fake_image, self.input_mask], dim=1)), True)
+        self.loss_G_A_1 = self.criterionGAN(self.netD_A(torch.cat([self.fake_image, self.input_mask], dim=1)), True)
         # self.loss_G_A_2 = self.criterionGAN(self.netD_A(torch.cat([self.rec_image, self.cloth_mask], dim=1)), True)
 
         # self.loss_G_B = self.criterionGAN(self.netD_B(self.rec_image), True)
@@ -159,7 +159,7 @@ class MondeTransferModel(BaseModel):
         # self.loss_cycle_B = self.criterionCycle(self.rec_B, self.real_B) * lambda_B
 
         # combined loss
-        self.loss_G = self.loss_content_vgg + 100000 * self.loss_style_vgg#100 * self.loss_G_A_1# + 50 * self.loss_G_A_2
+        self.loss_G =  self.loss_G_A_1 + self.loss_content_vgg ## + 50 * self.loss_G_A_2, + 100000 * self.loss_style_vgg +
         # + 0.2 * self.loss_cycle_A
         self.loss_G.backward()
 
@@ -167,13 +167,13 @@ class MondeTransferModel(BaseModel):
         # forward
         self.forward()
         # G_A and G_B
-        # self.set_requires_grad([self.netD_A], False)
+        self.set_requires_grad([self.netD_A], False)
         self.optimizer_G.zero_grad()
         self.backward_G()
         self.optimizer_G.step()
         # D_A and D_B
-        # self.set_requires_grad([self.netD_A], True)
-        # self.optimizer_D.zero_grad()
-        # self.backward_D_A()
+        self.set_requires_grad([self.netD_A], True)
+        self.optimizer_D.zero_grad()
+        self.backward_D_A()
         # self.backward_D_B()
-        # self.optimizer_D.step()
+        self.optimizer_D.step()
