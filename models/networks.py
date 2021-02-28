@@ -333,7 +333,27 @@ class ResnetSetGenerator(nn.Module):
 
         self.encoder_img = self.get_encoder(input_nc, n_downsampling, ngf, norm_layer, use_dropout, n_blocks, padding_type, use_bias)
         self.encoder_input_cloth = self.get_encoder(input_nc, n_downsampling, ngf, norm_layer, use_dropout, n_blocks, padding_type, use_bias)
-        self.decoder_img = self.get_decoder(output_nc, n_downsampling, 2 * ngf, norm_layer, use_bias)  # 2*ngf
+        self.decoder_img = self.get_decoder(output_nc, n_downsampling, ngf, norm_layer, use_bias)  # 2*ngf
+
+    def calc_mean_std(feat, eps=1e-5):
+        # eps is a small value added to the variance to avoid divide-by-zero.
+        size = feat.size()
+        assert (len(size) == 4)
+        N, C = size[:2]
+        feat_var = feat.view(N, C, -1).var(dim=2) + eps
+        feat_std = feat_var.sqrt().view(N, C, 1, 1)
+        feat_mean = feat.view(N, C, -1).mean(dim=2).view(N, C, 1, 1)
+        return feat_mean, feat_std
+
+    def adaptive_instance_normalization(content_feat, style_feat):
+        assert (content_feat.size()[:2] == style_feat.size()[:2])
+        size = content_feat.size()
+        style_mean, style_std = calc_mean_std(style_feat)
+        content_mean, content_std = calc_mean_std(content_feat)
+
+        normalized_feat = (content_feat - content_mean.expand(
+            size)) / content_std.expand(size)
+        return normalized_feat * style_std.expand(size) + style_mean.expand(size)
 
     def get_encoder(self, input_nc, n_downsampling, ngf, norm_layer, use_dropout, n_blocks, padding_type, use_bias):
         model = [nn.ReflectionPad2d(3),
@@ -385,8 +405,11 @@ class ResnetSetGenerator(nn.Module):
         # enc_segs = torch.cat(enc_segs)
         # enc_segs_sum = torch.sum(enc_segs, dim=0, keepdim=True)  # aggregated set feature
 
+        # AdalN (Adaptive Instance Normalization)
+        t = self.adaptive_instance_normalization(enc_img, enc_input_cloth[-1])
+
         # run decoder
-        feat_img = torch.cat([enc_img, enc_input_cloth], dim=1)
+        feat_img = torch.cat(t, dim=1)
         out_image = self.decoder_img(feat_img)
         # feat_cloth = torch.cat([enc_img, enc_cloth, enc_input_cloth], dim=1)
         # out_cloth = self.decoder_cloth(feat_cloth)
