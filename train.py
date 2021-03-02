@@ -14,7 +14,7 @@ if __name__ == '__main__':
     # data_loader = CreateDataLoader(opt)
     # dataset = data_loader.load_data()
     training_set = sgunit_train_dataset.sgunittraindataset(opt)
-    dataset = DataLoader(training_set, batch_size=2)
+    dataset = DataLoader(training_set, batch_size=2, shuffle=True)
     dataset_size = len(dataset)
     print('#training images = %d' % dataset_size)
 
