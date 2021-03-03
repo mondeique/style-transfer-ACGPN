@@ -37,7 +37,7 @@ class MondeTransferModel(BaseModel):
         self.visual_names = visual_names_A
         # specify the models you want to save to the disk. The program will call base_model.save_networks and base_model.load_networks
         if self.isTrain:
-            self.model_names = ['G_A', 'D_A']
+            self.model_names = ['G_A', 'D_A']#
         else:  # during test time, only load Gs
             self.model_names = ['G_A']
 
@@ -134,8 +134,13 @@ class MondeTransferModel(BaseModel):
         #    self.loss_idt_B = 0
 
         # GAN loss D_A(G_A(A))
+<<<<<<< HEAD
         self.loss_content_vgg, self.loss_style_vgg = self.get_vgg_loss()
         # GAN loss D_B(G_B(B))
+=======
+        self.loss_style_vgg, self.loss_content_vgg = self.get_vgg_loss()
+        # # GAN loss D_B(G_B(B))
+>>>>>>> master
 
         self.loss_G_A = self.criterionGAN(self.netD_A(torch.cat([self.fake_image, self.input_mask], dim=1)), True)
         # self.loss_G_A_2 = self.criterionGAN(self.netD_A(torch.cat([self.rec_image, self.cloth_mask], dim=1)), True)
@@ -147,7 +152,11 @@ class MondeTransferModel(BaseModel):
         # self.loss_cycle_B = self.criterionCycle(self.rec_B, self.real_B) * lambda_B
 
         # combined loss
+<<<<<<< HEAD
         self.loss_G = self.loss_G_A + self.loss_style_vgg + self.loss_content_vgg
+=======
+        self.loss_G =  self.loss_G_A_1 + self.loss_content_vgg ## + 50 * self.loss_G_A_2, + 100000 * self.loss_style_vgg +
+>>>>>>> master
         # + 0.2 * self.loss_cycle_A
         self.loss_G.backward()
 
