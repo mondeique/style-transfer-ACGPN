@@ -83,6 +83,8 @@ def define_G(input_nc, output_nc, ngf, netG, norm='batch', use_dropout=False, in
         net = ResnetGenerator(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout, n_blocks=9)
     elif netG == 'set':
         net = ResnetSetGenerator(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout, n_blocks=9)
+    elif netG == 'transform':
+        net = TransformerNet()
     else:
         raise NotImplementedError('Generator model name [%s] is not recognized' % netG)
     return init_net(net, init_type, init_gain, gpu_ids)
@@ -134,15 +136,17 @@ class StyleTransferLoss(nn.Module):
     def __init__(self):
         super(StyleTransferLoss, self).__init__()
         self.loss = nn.MSELoss()
+        self.features = ['relu1_1', 'relu2_1', 'relu3_1', 'relu4_1', 'relu5_1', 'relu4_2']
 
-    def __call__(self, image_vgg_feature, cloth_vgg_feature, fake_vgg_feature, phase = 'content'):
-        loss = 0
-        for index, value in enumerate(image_vgg_feature):
-            if phase == 'content':
-                loss += self.loss(image_vgg_feature[index], fake_vgg_feature[index])
+    def __call__(self, image_vgg_feature, cloth_vgg_feature, fake_vgg_feature):
+        content_loss = 0
+        style_loss = 0
+        for key in self.features:
+            if key == 'relu4_2':
+                content_loss += self.loss(image_vgg_feature[key], fake_vgg_feature[key])
             else:
-                loss += self.loss(gram_matrix(cloth_vgg_feature[index]), gram_matrix(fake_vgg_feature[index]))
-        return loss/len(image_vgg_feature)
+                style_loss += 0.2 * self.loss(gram_matrix(cloth_vgg_feature[key]), gram_matrix(fake_vgg_feature[key]))
+        return content_loss, 100000 * style_loss
 
 
 # Define spectral normalization layer
@@ -257,28 +261,54 @@ class ResnetGenerator(nn.Module):
     def forward(self, input):
         return self.model(input)
 
+
 class VGG19(torch.nn.Module):
     def __init__(self, conv_list, requires_grad=False):
         super(VGG19, self).__init__()
-        vgg_pretrained_features = torchvision.models.vgg19(pretrained=True).features.cuda()
-        self.feature_list = []
-        for index, value in enumerate(conv_list):
-            self.feature_list.append(torch.nn.Sequential())
-            if index == 0 :
-                for x in range(0, conv_list[index]):
-                    self.feature_list[index].add_module(str(x), vgg_pretrained_features[x])
-            else:
-                for x in range(conv_list[index-1], conv_list[index]):
-                    self.feature_list[index].add_module(str(x), vgg_pretrained_features[x])
+        vgg_pretrained_features = torchvision.models.vgg19(pretrained=True).features
+        self.slice1 = torch.nn.Sequential()
+        self.slice2 = torch.nn.Sequential()
+        self.slice3 = torch.nn.Sequential()
+        self.slice4 = torch.nn.Sequential()
+        self.slice5 = torch.nn.Sequential()
+        self.slice6 = torch.nn.Sequential()
+        for x in range(2):
+            self.slice1.add_module(str(x), vgg_pretrained_features[x])
+        for x in range(2, 7):
+            self.slice2.add_module(str(x), vgg_pretrained_features[x])
+        for x in range(7, 12):
+            self.slice3.add_module(str(x), vgg_pretrained_features[x])
+        for x in range(12, 21):
+            self.slice4.add_module(str(x), vgg_pretrained_features[x])
+        for x in range(21, 23):
+            self.slice5.add_module(str(x), vgg_pretrained_features[x])
+        for x in range(23, 30):
+            self.slice6.add_module(str(x), vgg_pretrained_features[x])
+
         if not requires_grad:
             for param in self.parameters():
                 param.requires_grad = False
     def forward(self, X):
-        vgg_outputs = []
-        feature = X
-        for i in self.feature_list:
-            feature = i(feature)
-            vgg_outputs.append(feature)
+        h = self.slice1(X)
+        h_relu1_1 = h
+        h = self.slice2(h)
+        h_relu2_1 = h
+        h = self.slice3(h)
+        h_relu3_1 = h
+        h = self.slice4(h)
+        h_relu4_1 = h
+        h = self.slice5(h)
+        h_relu4_2 = h
+        h = self.slice6(h)
+        h_relu5_1 = h
+        vgg_outputs = {
+            'relu1_1': h_relu1_1,
+            'relu2_1': h_relu2_1,
+            'relu3_1': h_relu3_1,
+            'relu4_1': h_relu4_1,
+            'relu4_2': h_relu4_2,
+            'relu5_1': h_relu5_1
+        }
         return vgg_outputs
 
 # ResNet generator for "set" of instance attributes
@@ -303,7 +333,27 @@ class ResnetSetGenerator(nn.Module):
 
         self.encoder_img = self.get_encoder(input_nc, n_downsampling, ngf, norm_layer, use_dropout, n_blocks, padding_type, use_bias)
         self.encoder_input_cloth = self.get_encoder(input_nc, n_downsampling, ngf, norm_layer, use_dropout, n_blocks, padding_type, use_bias)
-        self.decoder_img = self.get_decoder(output_nc, n_downsampling, 2 * ngf, norm_layer, use_bias)  # 2*ngf
+        self.decoder_img = self.get_decoder(output_nc, n_downsampling, ngf, norm_layer, use_bias)  # 2*ngf
+
+    def calc_mean_std(feat, eps=1e-5):
+        # eps is a small value added to the variance to avoid divide-by-zero.
+        size = feat.size()
+        assert (len(size) == 4)
+        N, C = size[:2]
+        feat_var = feat.view(N, C, -1).var(dim=2) + eps
+        feat_std = feat_var.sqrt().view(N, C, 1, 1)
+        feat_mean = feat.view(N, C, -1).mean(dim=2).view(N, C, 1, 1)
+        return feat_mean, feat_std
+
+    def adaptive_instance_normalization(content_feat, style_feat):
+        assert (content_feat.size()[:2] == style_feat.size()[:2])
+        size = content_feat.size()
+        style_mean, style_std = calc_mean_std(style_feat)
+        content_mean, content_std = calc_mean_std(content_feat)
+
+        normalized_feat = (content_feat - content_mean.expand(
+            size)) / content_std.expand(size)
+        return normalized_feat * style_std.expand(size) + style_mean.expand(size)
 
     def get_encoder(self, input_nc, n_downsampling, ngf, norm_layer, use_dropout, n_blocks, padding_type, use_bias):
         model = [nn.ReflectionPad2d(3),
@@ -355,8 +405,11 @@ class ResnetSetGenerator(nn.Module):
         # enc_segs = torch.cat(enc_segs)
         # enc_segs_sum = torch.sum(enc_segs, dim=0, keepdim=True)  # aggregated set feature
 
+        # AdalN (Adaptive Instance Normalization)
+        t = self.adaptive_instance_normalization(enc_img, enc_input_cloth[-1])
+
         # run decoder
-        feat_img = torch.cat([enc_img, enc_input_cloth], dim=1)
+        feat_img = torch.cat(t, dim=1)
         out_image = self.decoder_img(feat_img)
         # feat_cloth = torch.cat([enc_img, enc_cloth, enc_input_cloth], dim=1)
         # out_cloth = self.decoder_cloth(feat_cloth)
@@ -650,3 +703,141 @@ class PixelDiscriminator(nn.Module):
 
     def forward(self, input):
         return self.net(input)
+
+
+## Style Transfer Module
+
+class VGG16(torch.nn.Module):
+    def __init__(self, requires_grad=False):
+        super(VGG16, self).__init__()
+        vgg_pretrained_features = models.vgg16(pretrained=True).features
+        self.slice1 = torch.nn.Sequential()
+        self.slice2 = torch.nn.Sequential()
+        self.slice3 = torch.nn.Sequential()
+        self.slice4 = torch.nn.Sequential()
+        for x in range(4):
+            self.slice1.add_module(str(x), vgg_pretrained_features[x])
+        for x in range(4, 9):
+            self.slice2.add_module(str(x), vgg_pretrained_features[x])
+        for x in range(9, 16):
+            self.slice3.add_module(str(x), vgg_pretrained_features[x])
+        for x in range(16, 23):
+            self.slice4.add_module(str(x), vgg_pretrained_features[x])
+        if not requires_grad:
+            for param in self.parameters():
+                param.requires_grad = False
+
+    def forward(self, X):
+        h = self.slice1(X)
+        h_relu1_2 = h
+        h = self.slice2(h)
+        h_relu2_2 = h
+        h = self.slice3(h)
+        h_relu3_3 = h
+        h = self.slice4(h)
+        h_relu4_3 = h
+        vgg_outputs = namedtuple("VggOutputs", ['relu1_2', 'relu2_2', 'relu3_3', 'relu4_3'])
+        out = vgg_outputs(h_relu1_2, h_relu2_2, h_relu3_3, h_relu4_3)
+        return out
+
+
+class ConvLayer(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, stride):
+        super(ConvLayer, self).__init__()
+        reflection_padding = kernel_size // 2
+        self.reflection_pad = nn.ReflectionPad2d(reflection_padding)
+        self.conv2d = nn.Conv2d(in_channels, out_channels, kernel_size, stride)
+
+    def forward(self, x):
+        out = self.reflection_pad(x)
+        out = self.conv2d(out)
+        return out
+
+
+class ResidualBlock(nn.Module):
+    """ResidualBlock
+    introduced in: https://arxiv.org/abs/1512.03385
+    recommended architecture: http://torch.ch/blog/2016/02/04/resnets.html
+    """
+
+    def __init__(self, channels):
+        super(ResidualBlock, self).__init__()
+        self.conv1 = ConvLayer(channels, channels, kernel_size=3, stride=1)
+        self.in1 = nn.InstanceNorm2d(channels, affine=True)
+        self.conv2 = ConvLayer(channels, channels, kernel_size=3, stride=1)
+        self.in2 = nn.InstanceNorm2d(channels, affine=True)
+        self.relu = nn.ReLU()
+
+    def forward(self, x):
+        residual = x
+        out = self.relu(self.in1(self.conv1(x)))
+        out = self.in2(self.conv2(out))
+        out = out + residual
+        return out
+
+
+class UpsampleConvLayer(nn.Module):
+    """UpsampleConvLayer
+    Upsamples the input and then does a convolution. This method gives better results
+    compared to ConvTranspose2d.
+    ref: http://distill.pub/2016/deconv-checkerboard/
+    """
+
+    def __init__(self, in_channels, out_channels, kernel_size, stride, upsample=None):
+        super(UpsampleConvLayer, self).__init__()
+        self.upsample = upsample
+        reflection_padding = kernel_size // 2
+        self.reflection_pad = nn.ReflectionPad2d(reflection_padding)
+        self.conv2d = nn.Conv2d(in_channels, out_channels, kernel_size, stride)
+
+    def forward(self, x):
+        x_in = x
+        if self.upsample:
+            x_in = nn.functional.interpolate(x_in, mode='nearest', scale_factor=self.upsample)
+        out = self.reflection_pad(x_in)
+        out = self.conv2d(out)
+        return out
+
+
+class TransformerNet(nn.Module):
+    def __init__(self):
+        super(TransformerNet, self).__init__()
+        # Initial convolution layers
+        self.encoder = nn.Sequential()
+
+        self.encoder.add_module('conv1', ConvLayer(3, 32, kernel_size=9, stride=1))
+        self.encoder.add_module('in1', nn.InstanceNorm2d(32, affine=True))
+        self.encoder.add_module('relu1', nn.ReLU())
+
+        self.encoder.add_module('conv2', ConvLayer(32, 64, kernel_size=3, stride=2))
+        self.encoder.add_module('in2', nn.InstanceNorm2d(64, affine=True))
+        self.encoder.add_module('relu2', nn.ReLU())
+
+        self.encoder.add_module('conv3', ConvLayer(64, 128, kernel_size=3, stride=2))
+        self.encoder.add_module('in3', nn.InstanceNorm2d(128, affine=True))
+        self.encoder.add_module('relu3', nn.ReLU())
+
+        # Residual layers
+        self.residual = nn.Sequential()
+
+        for i in range(5):
+            self.residual.add_module('resblock_%d' % (i + 1), ResidualBlock(128))
+
+        # Upsampling Layers
+        self.decoder = nn.Sequential()
+        self.decoder.add_module('deconv1', UpsampleConvLayer(128, 64, kernel_size=3, stride=1, upsample=2))
+        self.decoder.add_module('in4', nn.InstanceNorm2d(64, affine=True))
+        self.encoder.add_module('relu4', nn.ReLU())
+
+        self.decoder.add_module('deconv2', UpsampleConvLayer(64, 32, kernel_size=3, stride=1, upsample=2))
+        self.decoder.add_module('in5', nn.InstanceNorm2d(32, affine=True))
+        self.encoder.add_module('relu5', nn.ReLU())
+
+        self.decoder.add_module('deconv3', ConvLayer(32, 3, kernel_size=9, stride=1))
+
+    def forward(self, x):
+        encoder_output = self.encoder(x)
+        residual_output = self.residual(encoder_output)
+        decoder_output = self.decoder(residual_output)
+
+        return decoder_output

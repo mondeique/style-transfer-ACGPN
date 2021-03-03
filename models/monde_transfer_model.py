@@ -18,7 +18,7 @@ class MondeTransferModel(BaseModel):
         if is_train:
             parser.add_argument('--lambda_A', type=float, default=10.0, help='weight for cycle loss (A -> B -> A)')
             # parser.add_argument('--lambda_B', type=float, default=10.0, help='weight for cycle loss (B -> A -> B)')
-            parser.add_argument('--lambda_identity', type=float, default=1.0, help='use identity mapping. Setting lambda_identity other than 0 has an effect of scaling the weight of the identity mapping loss. For example, if the weight of the identity loss should be 10 times smaller than the weight of the reconstruction loss, please set lambda_identity = 0.1')
+            # parser.add_argument('--lambda_identity', type=float, default=1.0, help='use identity mapping. Setting lambda_identity other than 0 has an effect of scaling the weight of the identity mapping loss. For example, if the weight of the identity loss should be 10 times smaller than the weight of the reconstruction loss, please set lambda_identity = 0.1')
 
         return parser
 
@@ -26,7 +26,7 @@ class MondeTransferModel(BaseModel):
         BaseModel.initialize(self, opt)
 
         # specify the training losses you want to print out. The program will call base_model.get_current_losses
-        self.loss_names = ['G', 'D_A','content_vgg']#'cycle_A','G_A_1', 'style_vgg', 'G_A_1',
+        self.loss_names = ['style_vgg', 'content_vgg', 'G_A', 'D_A']#'cycle_A',
         # specify the images G_A'you want to save/display. The program will call base_model.get_current_visuals
         visual_names_A = ['real_image', 'image_mask', 'input_mask', 'fake_image']#, 'cloth_mask', 'rec_image'
         # visual_names_B = ['real_B', 'fake_A', 'rec_B']
@@ -45,28 +45,22 @@ class MondeTransferModel(BaseModel):
         # The naming conversion is different from those used in the paper
         # Code (paper): G_A (G), G_B (F), D_A (D_Y), D_B (D_X)
         self.netG_A = networks.define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, opt.norm,
-                                        not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
-
-        #style, content transfer
-        self.content_conv_list = [23]
-        self.style_conv_list = [2,7,12,21,30]
-        self.style_vgg19 = networks.VGG19(requires_grad=False, conv_list=self.style_conv_list).to(self.device)
-        self.content_vgg19 = networks.VGG19(requires_grad=False, conv_list=self.content_conv_list).to(self.device)
+                                         not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
+        self.vgg19 = networks.VGG19(requires_grad=False).cuda()
         use_sigmoid = opt.no_lsgan
         self.netD_A = networks.define_D(opt.output_nc, opt.ndf, opt.netD,
-                                        opt.n_layers_D, opt.norm, use_sigmoid, opt.init_type, opt.init_gain,
-                                        self.gpu_ids)
+                                         opt.n_layers_D, opt.norm, use_sigmoid, opt.init_type, opt.init_gain,
+                                         self.gpu_ids)
         # self.netG_B = networks.define_G(opt.output_nc, opt.input_nc, opt.ngf, opt.netG, opt.norm,
         #                                not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
         if self.isTrain:
             # self.fake_A_pool = ImagePool(opt.pool_size)
-            self.fake_B_pool = ImagePool(opt.pool_size)
+            # self.fake_B_pool = ImagePool(opt.pool_size)
             # define loss functions
             # self.criterionCycle = torch.nn.L1Loss()
             self.criterionStyleTransfer = networks.StyleTransferLoss().to(self.device)
             self.criterionGAN = networks.GANLoss(use_lsgan=not opt.no_lsgan).to(self.device)
             # self.criterionIdt = torch.nn.L1Loss()
-            # self.criterionSty = StyleLoss()
             # initialize optimizers
             self.optimizer_G = torch.optim.Adam(self.netG_A.parameters(),
                                                 lr=opt.lr, betas=(opt.beta1, 0.999))
@@ -87,13 +81,10 @@ class MondeTransferModel(BaseModel):
         # self.image_paths = input['A_paths' if AtoB else 'B_paths']
 
     def get_vgg_loss(self):
-        image_style_features = self.style_vgg19(self.image_mask)
-        cloth_style_features = self.style_vgg19(self.input_mask)
-        fake_style_features = self.style_vgg19(self.fake_image)
-        image_content_features = self.content_vgg19(self.image_mask)
-        cloth_content_features = self.content_vgg19(self.input_mask)
-        fake_content_features = self.content_vgg19(self.fake_image)
-        return self.criterionStyleTransfer(image_style_features, cloth_style_features, fake_style_features, phase='style'), self.criterionStyleTransfer(image_content_features, cloth_content_features, fake_content_features, phase='content')
+        image_features = self.vgg19(self.image_mask)
+        input_features = self.vgg19(self.input_mask)
+        fake_features = self.vgg19(self.fake_image)
+        return self.criterionStyleTransfer(image_features, input_features, fake_features)
 
     def forward(self):
         self.image_mask = self.real_image.mul(self.real_image_mask)
@@ -116,7 +107,7 @@ class MondeTransferModel(BaseModel):
         # loss_D_rec = self.criterionGAN(pred_rec, False)
         # Combined loss
         loss_D_pos = loss_D_real * 0.5
-        loss_D_neg = loss_D_fake * 0.5 #+ loss_D_rec * 0.25
+        loss_D_neg = loss_D_fake * 0.5
         loss_D = loss_D_pos + loss_D_neg
         # backward
         loss_D.backward()
@@ -124,11 +115,11 @@ class MondeTransferModel(BaseModel):
 
     def backward_D_A(self):
         # rec_image = self.fake_B_pool.query(self.rec_image)
-        self.loss_D_A = self.backward_D_basic(self.netD_A, self.cloth_mask, self.input_mask, self.image_mask, self.fake_image)#, self.rec_image
+        self.loss_D_A = self.backward_D_basic(self.netD_A, self.cloth_mask, self.input_mask, self.image_mask, self.fake_image)
 
     def backward_G(self):
         # lambda_idt = self.opt.lambda_identity
-        lambda_A = self.opt.lambda_A
+        # lambda_A = self.opt.lambda_A
         # lambda_B = self.opt.lambda_B
         ## Identity loss
         #if lambda_idt > 0:
@@ -141,15 +132,17 @@ class MondeTransferModel(BaseModel):
         #else:
         #    self.loss_idt_A = 0
         #    self.loss_idt_B = 0
-        # Style loss
-        # self.loss_sty = StyleLoss(self.real_image) - StyleLoss(self.image_mask) - StyleLoss(self.real_cloth) - StyleLoss(self.cloth_mask)
-        # + StyleLoss(self.real_image) - StyleLoss(self.real_cloth) - StyleLoss(self.image_mask) - StyleLoss(self.cloth_mask)
 
         # GAN loss D_A(G_A(A))
+<<<<<<< HEAD
+        self.loss_content_vgg, self.loss_style_vgg = self.get_vgg_loss()
+        # GAN loss D_B(G_B(B))
+=======
         self.loss_style_vgg, self.loss_content_vgg = self.get_vgg_loss()
         # # GAN loss D_B(G_B(B))
+>>>>>>> master
 
-        self.loss_G_A_1 = self.criterionGAN(self.netD_A(torch.cat([self.fake_image, self.input_mask], dim=1)), True)
+        self.loss_G_A = self.criterionGAN(self.netD_A(torch.cat([self.fake_image, self.input_mask], dim=1)), True)
         # self.loss_G_A_2 = self.criterionGAN(self.netD_A(torch.cat([self.rec_image, self.cloth_mask], dim=1)), True)
 
         # self.loss_G_B = self.criterionGAN(self.netD_B(self.rec_image), True)
@@ -159,7 +152,11 @@ class MondeTransferModel(BaseModel):
         # self.loss_cycle_B = self.criterionCycle(self.rec_B, self.real_B) * lambda_B
 
         # combined loss
+<<<<<<< HEAD
+        self.loss_G = self.loss_G_A + self.loss_style_vgg + self.loss_content_vgg
+=======
         self.loss_G =  self.loss_G_A_1 + self.loss_content_vgg ## + 50 * self.loss_G_A_2, + 100000 * self.loss_style_vgg +
+>>>>>>> master
         # + 0.2 * self.loss_cycle_A
         self.loss_G.backward()
 
@@ -175,5 +172,5 @@ class MondeTransferModel(BaseModel):
         self.set_requires_grad([self.netD_A], True)
         self.optimizer_D.zero_grad()
         self.backward_D_A()
-        # self.backward_D_B()
+        # # self.backward_D_B()
         self.optimizer_D.step()
