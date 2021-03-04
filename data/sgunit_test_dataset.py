@@ -26,7 +26,7 @@ class sgunittestdataset(BaseDataset):
                 if color != components[-2]:
                     path_bundles.append({
                         'base_image' : base_path,
-                        'base_image_mask' : os.path.join(self.root, 'images', 'mask', components[-3], components[-2], components[-1][:-4] + '_mask.png'),
+                        'base_image_mask' : os.path.join(self.root, 'test_images', 'mask', components[-3], components[-2], components[-1][:-4] + '_mask.png'),
                         'base_cloth' : os.path.join(self.dir_clothes, 'base', components[-3], f'{components[-2]}'),
                         'base_cloth_mask' : os.path.join(self.dir_clothes, 'mask', components[-3], f'{components[-2]}_mask.png'),
                         'input_cloth' : os.path.join(self.dir_clothes, 'base', components[-3], f'{color}'),
@@ -40,9 +40,9 @@ class sgunittestdataset(BaseDataset):
         self.batch_size = opt.batch_size
         self.root = opt.dataroot
         self.batch_size = opt.batch_size
-        self.dir_clothes = os.path.join(self.root, 'clothes')
-        self.dir_images = os.path.join(self.root, 'images')
-        self.dir_base_images = os.path.join(self.root, 'images/base')
+        self.dir_clothes = os.path.join(self.root, 'test_clothes')
+        self.dir_images = os.path.join(self.root, 'test_images')
+        self.dir_base_images = os.path.join(self.root, 'test_images/base')
         self.base_images_path = sorted(make_dataset(self.dir_base_images))
 
         self.test_data_bundle_paths = self.make_data_bundles(self.base_images_path)

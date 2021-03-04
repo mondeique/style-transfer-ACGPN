@@ -1,11 +1,18 @@
 import os
+
+import numpy as np
+
 from options.test_options import TestOptions
 from data import CreateDataLoader
 from models import create_model
+from util import util
 from util.visualizer import save_images
 from util import html
 from data import sgunit_test_dataset
 from torch.utils.data import DataLoader
+import torchvision
+import torch
+from PIL import Image
 
 
 if __name__ == '__main__':
@@ -25,8 +32,8 @@ if __name__ == '__main__':
     model = create_model(opt)
     model.setup(opt)
     # create a website
-    web_dir = os.path.join(opt.results_dir, opt.name, '%s_%s' % (opt.phase, opt.epoch))
-    webpage = html.HTML(web_dir, 'Experiment = %s, Phase = %s, Epoch = %s' % (opt.name, opt.phase, opt.epoch))
+    # web_dir = os.path.join(opt.results_dir, opt.name, '%s_%s' % (opt.phase, opt.epoch))
+    # webpage = html.HTML(web_dir, 'Experiment = %s, Phase = %s, Epoch = %s' % (opt.name, opt.phase, opt.epoch))
     # test with eval mode. This only affects layers like batchnorm and dropout.
     # pix2pix: we use batchnorm and dropout in the original pix2pix. You can experiment it with and without eval() mode.
     # CycleGAN: It should not affect CycleGAN as CycleGAN uses instancenorm without dropout.
@@ -37,10 +44,22 @@ if __name__ == '__main__':
             break
         model.set_input(data)
         model.test()
-        visuals = model.get_current_visuals()
-        img_path = model.get_image_paths()
-        if i % 5 == 0:
-            print('processing (%04d)-th image... %s' % (i, img_path))
-        save_images(webpage, visuals, img_path, aspect_ratio=opt.aspect_ratio, width=opt.display_winsize)
+        # visuals = model.get_current_visuals()
+        # img_path = model.get_image_paths()
+        # if i % 5 == 0:
+        #     print('processing (%04d)-th image... %s' % (i, img_path))
+        img_path = os.path.join('./results', f'test_{i}_imagemask.png')
+        tensor_to_pil = torchvision.transforms.ToPILImage()(model.image_mask.cpu().squeeze_(0))
+        tensor_to_pil.save(img_path)
+        img_path = os.path.join('./results', f'test_{i}_inputmask.png')
+        tensor_to_pil = torchvision.transforms.ToPILImage()(model.input_mask.cpu().squeeze_(0))
+        tensor_to_pil.save(img_path)
+        img_path = os.path.join('./results', f'test_{i}_fakeimage.png')
+        tensor_to_pil = torchvision.transforms.ToPILImage()(model.fake_image.cpu().squeeze_(0))
+        tensor_to_pil.save(img_path)
+
+        # mask = (model.real_image_mask.cpu().numpy() == 0)
+        # new_image = model.real_image.cpu().numpy() * mask
+        # img_path = os.path.join('./results/', f'test_{i}_newimage.jpg')
     # save the website
-    webpage.save()
+    # webpage.save()
