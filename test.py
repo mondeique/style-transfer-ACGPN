@@ -4,6 +4,8 @@ from data import CreateDataLoader
 from models import create_model
 from util.visualizer import save_images
 from util import html
+from data import sgunit_test_dataset
+from torch.utils.data import DataLoader
 
 
 if __name__ == '__main__':
@@ -14,8 +16,12 @@ if __name__ == '__main__':
     opt.serial_batches = True  # no shuffle
     opt.no_flip = True    # no flip
     opt.display_id = -1   # no visdom display
-    data_loader = CreateDataLoader(opt)
-    dataset = data_loader.load_data()
+    # data_loader = CreateDataLoader(opt)
+    # dataset = data_loader.load_data()
+    test_set = sgunit_test_dataset.sgunittestdataset(opt)
+    dataset = DataLoader(test_set, batch_size=1)
+    dataset_size = len(dataset)
+    print('#test images = %d' % dataset_size)
     model = create_model(opt)
     model.setup(opt)
     # create a website
