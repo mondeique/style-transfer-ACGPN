@@ -22,6 +22,7 @@ if __name__ == '__main__':
     opt.batch_size = 1    # test code only supports batch_size = 1
     opt.serial_batches = True  # no shuffle
     opt.no_flip = True    # no flip
+    opt.no_dropout = True
     opt.display_id = -1   # no visdom display
     # data_loader = CreateDataLoader(opt)
     # dataset = data_loader.load_data()

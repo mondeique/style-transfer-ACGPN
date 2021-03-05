@@ -51,7 +51,7 @@ class TestModel(MondeTransferModel):
         self.image_mask = self.real_image.mul(self.real_image_mask)
         self.cloth_mask = self.real_cloth.mul(self.real_cloth_mask)
         self.input_mask = self.input_cloth.mul(self.input_cloth_mask)
-        self.fake_image = self.netG(torch.cat([self.image_mask, self.input_mask], dim=1))
+        self.fake_image = self.netG(torch.cat([self.image_mask, self.input_cloth], dim=1))
 
         # self.real_image_numpy = self.real_image.numpy()
         # self.image_mask_numpy = self.image_mask.numpy()
