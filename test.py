@@ -49,18 +49,22 @@ if __name__ == '__main__':
         # img_path = model.get_image_paths()
         # if i % 5 == 0:
         #     print('processing (%04d)-th image... %s' % (i, img_path))
-        img_path = os.path.join('./results', f'test_{i}_imagemask.png')
+        img_path = os.path.join('./results/experiment_name/test_latest/images', f'test_{i}_imagemask.png')
         tensor_to_pil = torchvision.transforms.ToPILImage()(model.image_mask.cpu().squeeze_(0))
         tensor_to_pil.save(img_path)
-        img_path = os.path.join('./results', f'test_{i}_inputmask.png')
+        img_path = os.path.join('./results/experiment_name/test_latest/images', f'test_{i}_inputmask.png')
         tensor_to_pil = torchvision.transforms.ToPILImage()(model.input_mask.cpu().squeeze_(0))
         tensor_to_pil.save(img_path)
-        img_path = os.path.join('./results', f'test_{i}_fakeimage.png')
+        img_path = os.path.join('./results/experiment_name/test_latest/images', f'test_{i}_fakeimage.png')
         tensor_to_pil = torchvision.transforms.ToPILImage()(model.fake_image.cpu().squeeze_(0))
         tensor_to_pil.save(img_path)
 
-        # mask = (model.real_image_mask.cpu().numpy() == 0)
-        # new_image = model.real_image.cpu().numpy() * mask
-        # img_path = os.path.join('./results/', f'test_{i}_newimage.jpg')
+        # new image
+        img_path = os.path.join('./results/experiment_name/test_latest/images', f'test_{i}_newimage.jpg')
+        empty_image = torch.sub(model.real_image.cpu(), model.real_image_mask.cpu())
+        new_image = torch.add(empty_image, model.fake_image.cpu())
+        tensor_to_pil = torchvision.transforms.ToPILImage()(new_image.squeeze_(0))
+        tensor_to_pil.save(img_path)
+
     # save the website
     # webpage.save()
