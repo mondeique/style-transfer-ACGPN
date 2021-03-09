@@ -28,7 +28,7 @@ class MondeTransferModel(BaseModel):
         # specify the training losses you want to print out. The program will call base_model.get_current_losses
         self.loss_names = ['content_vgg', 'G_A', 'D_A']#'cycle_A',
         # specify the images G_A'you want to save/display. The program will call base_model.get_current_visuals
-        visual_names_A = ['real_image', 'image_mask', 'input_mask', 'fake_image']#, 'cloth_mask', 'rec_image'
+        visual_names_A = ['real_image', 'image_mask', 'input_mask', 'fake_image', 'final_image']#, 'cloth_mask', 'rec_image'
         # visual_names_B = ['real_B', 'fake_A', 'rec_B']
         # if self.isTrain and self.opt.lambda_identity > 0.0:
             # visual_names_A.append('idt_A')
@@ -92,6 +92,9 @@ class MondeTransferModel(BaseModel):
         self.input_mask = self.input_cloth.mul(self.input_cloth_mask)
         self.fake_image = self.netG_A(torch.cat([self.image_mask, self.input_cloth], dim=1))
         # self.rec_image = self.netG_A(torch.cat([self.fake_image, self.cloth_mask], dim=1))
+
+        self.empty_image = torch.sub(self.real_image, self.real_image_mask)
+        self.final_image = torch.add(self.empty_image, self.fake_image)
 
         # self.fake_A = self.netG_B(self.real_B)
         # self.rec_B = self.netG_A(self.fake_A)
