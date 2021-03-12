@@ -61,7 +61,7 @@ if __name__ == '__main__':
 
         # new image
         img_path = os.path.join('./results/experiment_name/test_latest/images', f'test_{i}_newimage.jpg')
-        empty_image = torch.sub(model.real_image.cpu(), model.real_image_mask.cpu())
+        empty_image = torch.sub(model.real_image.cpu(), model.image_mask.cpu())
         new_image = torch.add(empty_image, model.fake_image.cpu())
         tensor_to_pil = torchvision.transforms.ToPILImage()(new_image.squeeze_(0))
         tensor_to_pil.save(img_path)
