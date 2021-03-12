@@ -25,9 +25,13 @@ $ python train.py
 3. GAN + content + cycle -> D initialize, GAN + content
 4. base content + style 200 epoch
 5. input 의 color 반영이 영향을 끼치는 것 같다 -> gray scale input 
-6. GAN 으로 색을 먼저 학습하도록 설정 -> 그 다음 실험을 멈추고 content 집어넣어서 학스 
-7. AdalN generator 
-8. AdalN Generator + content + GAN + style 
+6. GAN 으로 색을 먼저 학습하도록 설정 -> 그 다음 실험을 멈추고 content 집어넣어서 학습 
+7. AdalN Generator + content + GAN + style 
+
+## How to test
+```
+$ python test.py
+```
 
 ## Data Structure 
 ```
@@ -36,7 +40,7 @@ $ python train.py
 |
 |--data 
 |    |
-|    |--dataset
+|    |--dataset (test dataset 으로 나누어야함)
 |    |    |--clothes
 |    |    |    |--base
 |    |    |    |--mask
@@ -44,6 +48,7 @@ $ python train.py
 |    |    |--images
 |    |    |    |--base
 |    |    |    |--mask
+|    |    |    |--segmentation
 |    |
 |    |--sgunit_train_dataset.py
 |    |
