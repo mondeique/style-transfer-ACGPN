@@ -26,7 +26,7 @@ class BaseOptions():
         parser.add_argument('--ngf', type=int, default=64, help='# of gen filters in first conv layer')
         parser.add_argument('--ndf', type=int, default=64, help='# of discrim filters in first conv layer')
         # Use set generator and set discriminator as default architectures
-        parser.add_argument('--netD', type=str, default='set', help='selects model to use for netD')
+        parser.add_argument('--netD', type=str, default='basic', help='selects model to use for netD')
         parser.add_argument('--netG', type=str, default='basic', help='selects model to use for netG')
         parser.add_argument('--n_layers_D', type=int, default=3, help='only used if netD==n_layers')
         parser.add_argument('--gpu_ids', type=str, default='0', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
@@ -34,7 +34,7 @@ class BaseOptions():
         # Use unaligned_seg as a default dataset_mode
         parser.add_argument('--dataset_mode', type=str, default='sgunit_train', help='chooses how datasets are loaded. [unaligned | aligned | single]')
         # Use insta_gan as a default model
-        parser.add_argument('--model', type=str, default='monde_transfer', help='chooses which model to use. insta_gan, cycle_gan, pix2pix, test')
+        parser.add_argument('--model', type=str, default='stn_transfer', help='chooses which model to use. insta_gan, cycle_gan, pix2pix, test')
         parser.add_argument('--direction', type=str, default='AtoB', help='AtoB or BtoA')
         parser.add_argument('--epoch', type=str, default='latest', help='which epoch to load? set to latest to use latest cached model')
         parser.add_argument('--load_iter', type=int, default='0', help='which iteration to load? if load_iter > 0, the code will load models by iter_[load_iter]; otherwise, the code will load models by [epoch]')
