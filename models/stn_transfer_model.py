@@ -15,7 +15,7 @@ class STNTransferModel(BaseModel):
         BaseModel.initialize(self, opt)
 
         # specify the training losses you want to print out. The program will call base_model.get_current_losses
-        self.loss_names = ['style_vgg', 'content_vgg', 'G_A', 'D_A']
+        self.loss_names = ['stn', 'style_vgg', 'content_vgg', 'G_A', 'D_A']
         # specify the images G_A'you want to save/display. The program will call base_model.get_current_visuals
         visual_names_A = ['image_mask', 'input_mask', 'fake_image', 'empty_image', 'final_image']
 
@@ -67,14 +67,21 @@ class STNTransferModel(BaseModel):
         self.image_mask = self.real_image.mul(self.real_image_mask)
         self.cloth_mask = self.real_cloth.mul(self.real_cloth_mask)
         self.input_mask = self.input_cloth.mul(self.input_cloth_mask)
-        # TODO: FIX ME
-        self.warp_image = self.STN(self.input_mask, self.real_image_mask)
-        self.fake_image = self.netG_A(torch.cat([self.warp_image, self.image_mask], dim=1))
+        self.warp_conv, self.warped, self.warped_mask, self.rx, self.ry, self.cx, self.cy, self.rg, self.cg = self.STN(self.input_mask, self.real_image_mask, self.real_cloth_mask)
+        self.fake_image = self.netG_A(torch.cat([self.warped, self.image_mask], dim=1))
 
         self.empty_image = torch.sub(self.real_image, self.image_mask)
         self.final_image = torch.add(self.empty_image, self.fake_image)
 
-    def backward_D_basic(self, netD, real_image, fake_image):#, rec_image
+    def backward_stn(self, netSTN, lambda_stn, real_image, real_image_mask, real_cloth, real_cloth_mask):
+        image_mask = real_image.mul(real_image_mask)
+        cloth_mask = real_cloth.mul(real_cloth_mask)
+        warp_conv, warped, warped_mask, rx, ry, cx, cy, rg, cg = netSTN(cloth_mask, real_image_mask, real_cloth_mask)
+        loss_l1 = torch.nn.L1Loss(image_mask, warped) * lambda_stn
+        self.loss_stn = torch.mean(loss_l1 + rx + ry + cx + cy + rg + cg)
+        self.loss_stn.backward()
+
+    def backward_D_basic(self, netD, real_image, fake_image):
         # Real
         pred_real = netD(torch.cat([real_image], dim=1))
         loss_D_real = self.criterionGAN(pred_real, True)
@@ -103,6 +110,7 @@ class STNTransferModel(BaseModel):
         self.loss_G.backward()
 
     def optimize_parameters(self):
+        self.backward_stn(self.STN, 10, self.real_image, self.real_image_mask, self.real_cloth, self.real_cloth_mask)
         # forward
         self.forward()
         # G_A and G_B
