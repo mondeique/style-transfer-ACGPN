@@ -1036,7 +1036,7 @@ class STNNet(nn.Module):
         }['bounded_stn']
         self.loc_net = GridLocNet(grid_size_h, grid_size_w, target_control_points)
 
-        self.tps = TPSGridGen(256, 192, target_control_points)
+        self.tps = TPSGridGen(256, 256, target_control_points)
 
     def get_row(self, coor, num):
         for j in range(num):

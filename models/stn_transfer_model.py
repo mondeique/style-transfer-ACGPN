@@ -27,7 +27,7 @@ class STNTransferModel(BaseModel):
             self.model_names = ['STN', 'G_A']
 
         # load/define networks
-        self.STN = networks.define_UnetMask(4, self.gpu_ids)
+        self.netSTN = networks.define_UnetMask(4, self.gpu_ids)
         self.netG_A = networks.define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, opt.norm,
                                          not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
         self.vgg19 = networks.VGG19(requires_grad=False).cuda()
@@ -67,19 +67,16 @@ class STNTransferModel(BaseModel):
         self.image_mask = self.real_image.mul(self.real_image_mask)
         self.cloth_mask = self.real_cloth.mul(self.real_cloth_mask)
         self.input_mask = self.input_cloth.mul(self.input_cloth_mask)
-        self.warp_conv, self.warped, self.warped_mask, self.rx, self.ry, self.cx, self.cy, self.rg, self.cg = self.STN(self.input_mask, self.real_image_mask, self.real_cloth_mask)
+
+        # Real Image STN
+        self.real_warp_conv, self.real_warped, self.real_warped_mask, self.real_rx, self.real_ry, self.real_cx, self.real_cy, self.real_rg, self.real_cg = self.netSTN(self.cloth_mask, self.real_image_mask, self.real_cloth_mask)
+
+        # Fake Image STN
+        self.warp_conv, self.warped, self.warped_mask, self.rx, self.ry, self.cx, self.cy, self.rg, self.cg = self.netSTN(self.input_mask, self.real_image_mask, self.input_cloth_mask)
         self.fake_image = self.netG_A(torch.cat([self.warped, self.image_mask], dim=1))
 
         self.empty_image = torch.sub(self.real_image, self.image_mask)
         self.final_image = torch.add(self.empty_image, self.fake_image)
-
-    def backward_stn(self, netSTN, lambda_stn, real_image, real_image_mask, real_cloth, real_cloth_mask):
-        image_mask = real_image.mul(real_image_mask)
-        cloth_mask = real_cloth.mul(real_cloth_mask)
-        warp_conv, warped, warped_mask, rx, ry, cx, cy, rg, cg = netSTN(cloth_mask, real_image_mask, real_cloth_mask)
-        loss_l1 = torch.nn.L1Loss(image_mask, warped) * lambda_stn
-        self.loss_stn = torch.mean(loss_l1 + rx + ry + cx + cy + rg + cg)
-        self.loss_stn.backward()
 
     def backward_D_basic(self, netD, real_image, fake_image):
         # Real
@@ -97,20 +94,21 @@ class STNTransferModel(BaseModel):
         return loss_D
 
     def backward_D_A(self):
-        self.loss_D_A = self.backward_D_basic(self.netD_A, self.image_mask, self.fake_image)
+        self.loss_D_A = self.backward_D_basic(self.netD_A, self.real_image, self.final_image)
 
     def backward_G(self):
+        #STN loss
+        self.loss_stn_l1 = torch.nn.L1Loss(self.image_mask, self.real_warped) * 10
+        self.loss_stn = torch.mean(self.loss_stn_l1 + self.real_rx + self.real_ry + self.real_cx + self.real_cy + self.real_rg + self.real_cg)
         # GAN loss D_A(G_A(A))
         self.loss_content_vgg, self.loss_style_vgg = self.get_vgg_loss()
         # GAN loss D_B(G_B(B))
-        self.loss_G_A = self.criterionGAN(self.netD_A(torch.cat([self.fake_image, self.input_mask], dim=1)), True)
-
+        self.loss_G_A = self.criterionGAN(self.netD_A(torch.cat([self.final_image], dim=1)), True)
         # combined loss
-        self.loss_G = self.loss_G_A + self.loss_content_vgg + self.loss_style_vgg
+        self.loss_G = self.loss_G_A + self.loss_content_vgg + self.loss_style_vgg + self.loss_stn
         self.loss_G.backward()
 
     def optimize_parameters(self):
-        self.backward_stn(self.STN, 10, self.real_image, self.real_image_mask, self.real_cloth, self.real_cloth_mask)
         # forward
         self.forward()
         # G_A and G_B
