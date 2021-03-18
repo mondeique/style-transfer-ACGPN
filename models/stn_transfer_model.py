@@ -39,6 +39,7 @@ class STNTransferModel(BaseModel):
             # define loss functions
             self.criterionStyleTransfer = networks.StyleTransferLoss().to(self.device)
             self.criterionGAN = networks.GANLoss(use_lsgan=not opt.no_lsgan).to(self.device)
+            self.criterionL1 = torch.nn.L1Loss().to(self.device)
             # initialize optimizers
             self.optimizer_G = torch.optim.Adam(self.netG_A.parameters(),
                                                 lr=opt.lr, betas=(opt.beta1, 0.999))
@@ -90,7 +91,7 @@ class STNTransferModel(BaseModel):
         loss_D_neg = loss_D_fake * 0.5
         loss_D = loss_D_pos + loss_D_neg
         # backward
-        loss_D.backward()
+        loss_D.backward(retain_graph=True)
         return loss_D
 
     def backward_D_A(self):
@@ -98,7 +99,7 @@ class STNTransferModel(BaseModel):
 
     def backward_G(self):
         #STN loss
-        self.loss_stn_l1 = torch.nn.L1Loss(self.image_mask, self.real_warped) * 10
+        self.loss_stn_l1 = self.criterionL1(self.image_mask, self.real_warped) * 10
         self.loss_stn = torch.mean(self.loss_stn_l1 + self.real_rx + self.real_ry + self.real_cx + self.real_cy + self.real_rg + self.real_cg)
         # GAN loss D_A(G_A(A))
         self.loss_content_vgg, self.loss_style_vgg = self.get_vgg_loss()

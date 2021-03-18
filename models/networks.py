@@ -886,8 +886,8 @@ class CNN(nn.Module):
                   norm_layer(64), nn.ReLU(True)]
         self.maxpool = nn.MaxPool2d(kernel_size=2, stride=2)
         self.model = nn.Sequential(*model)
-        self.fc1 = nn.Linear(512, 128)
-        self.fc2 = nn.Linear(128, num_output)
+        self.fc1 = nn.Linear(1024, 256)
+        self.fc2 = nn.Linear(256, num_output)
 
     def forward(self, x):
         x = self.model(x)
@@ -961,7 +961,9 @@ class BoundedGridLocNet(nn.Module):
             flag = False
             max = -1
             for j in range(num - 1):
-                differ = (coor[:, (j + 1) * num + i, :] - coor[:, j * num + i, :]) ** 2
+                a1 = coor[:, (j + 1) * num + i, :]
+                a2 = coor[:, j * num + i, :]
+                differ = (a1 - a2) ** 2
                 if not flag:
                     second_dif = 0
                     flag = True
@@ -1080,7 +1082,7 @@ class STNNet(nn.Module):
         source_control_points=(source_control_points)
         # print('control points',source_control_points.shape)
         source_coordinate = self.tps(source_control_points)
-        grid = source_coordinate.view(batch_size, 256, 192, 2)
+        grid = source_coordinate.view(batch_size, 256, 256, 2)
         # print('grid size',grid.shape)
         transformed_x = grid_sample(x, grid, canvas=0)
         warped_mask = grid_sample(mask, grid, canvas=0)
