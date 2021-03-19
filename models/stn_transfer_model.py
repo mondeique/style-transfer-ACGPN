@@ -5,6 +5,7 @@ from .base_model import BaseModel
 from . import networks
 from util.gramMatrix import StyleLoss
 import torchvision
+import os
 
 
 class STNTransferModel(BaseModel):
@@ -15,9 +16,9 @@ class STNTransferModel(BaseModel):
         BaseModel.initialize(self, opt)
 
         # specify the training losses you want to print out. The program will call base_model.get_current_losses
-        self.loss_names = ['stn', 'style_vgg', 'content_vgg', 'G_A', 'D_A']
+        self.loss_names = ['style_vgg', 'content_vgg', 'G_A', 'D_A']
         # specify the images G_A'you want to save/display. The program will call base_model.get_current_visuals
-        visual_names_A = ['image_mask', 'input_mask', 'fake_image', 'empty_image', 'final_image']
+        visual_names_A = ['image_mask', 'input_mask', 'warped', 'fake_image', 'final_image']
 
         self.visual_names = visual_names_A
         # specify the models you want to save to the disk. The program will call base_model.save_networks and base_model.load_networks
@@ -26,8 +27,29 @@ class STNTransferModel(BaseModel):
         else:  # during test time, only load Gs
             self.model_names = ['STN', 'G_A']
 
-        # load/define networks
+        self.tanh = torch.nn.Tanh()
+
+        # load pretrained STN networks
         self.netSTN = networks.define_UnetMask(4, self.gpu_ids)
+
+        load_filename = '%s_net_%s.pth' % ('latest', 'STN')
+        load_path = os.path.join(self.save_dir, load_filename)
+        net = getattr(self, 'net' + 'STN')
+        if isinstance(net, torch.nn.DataParallel):
+            net = net.module
+        print('loading the model from %s' % load_path)
+        # if you are using PyTorch newer than 0.4 (e.g., built from
+        # GitHub source), you can remove str() on self.device
+        state_dict = torch.load(load_path, map_location=str(self.device))
+        if hasattr(state_dict, '_metadata'):
+            del state_dict._metadata
+        print(state_dict.keys())
+        # patch InstanceNorm checkpoints prior to 0.4
+        for key in list(state_dict.keys()):  # need to copy keys here because we mutate in loop
+            self.__patch_instance_norm_state_dict(state_dict, net, key.split('.'))
+        self.netSTN.load_state_dict(state_dict)
+
+        # define networks
         self.netG_A = networks.define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, opt.norm,
                                          not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
         self.vgg19 = networks.VGG19(requires_grad=False).cuda()
@@ -69,11 +91,10 @@ class STNTransferModel(BaseModel):
         self.cloth_mask = self.real_cloth.mul(self.real_cloth_mask)
         self.input_mask = self.input_cloth.mul(self.input_cloth_mask)
 
-        # Real Image STN
-        self.real_warp_conv, self.real_warped, self.real_warped_mask, self.real_rx, self.real_ry, self.real_cx, self.real_cy, self.real_rg, self.real_cg = self.netSTN(self.cloth_mask, self.real_image_mask, self.real_cloth_mask)
-
-        # Fake Image STN
+       # Fake Image STN
         self.warp_conv, self.warped, self.warped_mask, self.rx, self.ry, self.cx, self.cy, self.rg, self.cg = self.netSTN(self.input_mask, self.real_image_mask, self.input_cloth_mask)
+        self.warp_conv = self.warp_conv[:, 0:3, :, :]
+        self.warp_conv = self.tanh(self.warp_conv)
         self.fake_image = self.netG_A(torch.cat([self.warped, self.image_mask], dim=1))
 
         self.empty_image = torch.sub(self.real_image, self.image_mask)
@@ -98,16 +119,13 @@ class STNTransferModel(BaseModel):
         self.loss_D_A = self.backward_D_basic(self.netD_A, self.real_image, self.final_image)
 
     def backward_G(self):
-        #STN loss
-        self.loss_stn_l1 = self.criterionL1(self.image_mask, self.real_warped) * 10
-        self.loss_stn = torch.mean(self.loss_stn_l1 + self.real_rx + self.real_ry + self.real_cx + self.real_cy + self.real_rg + self.real_cg)
         # GAN loss D_A(G_A(A))
         self.loss_content_vgg, self.loss_style_vgg = self.get_vgg_loss()
         # GAN loss D_B(G_B(B))
         self.loss_G_A = self.criterionGAN(self.netD_A(torch.cat([self.final_image], dim=1)), True)
         # combined loss
-        self.loss_G = self.loss_G_A + self.loss_content_vgg + self.loss_style_vgg + self.loss_stn
-        self.loss_G.backward()
+        self.loss_G = self.loss_G_A + self.loss_content_vgg + self.loss_style_vgg
+        self.loss_G.backward(retain_graph=True)
 
     def optimize_parameters(self):
         # forward

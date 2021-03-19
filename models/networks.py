@@ -116,6 +116,7 @@ def define_UnetMask(input_nc, gpu_ids=[]):
     netG = UnetMask(input_nc,output_nc=4)
     netG.cuda(gpu_ids[0])
     netG.apply(weights_init)
+    netG = torch.nn.DataParallel(netG, gpu_ids)
     return netG
 
 ##############################################################################
@@ -894,7 +895,7 @@ class CNN(nn.Module):
         x = self.maxpool(x)
         x = x.view(x.shape[0], -1)
         x = F.relu(self.fc1(x))
-        x = F.dropout(x, training=self.training)
+        x = F.dropout(x, training=self.isTrain)
         x = self.fc2(x)
 
         return x

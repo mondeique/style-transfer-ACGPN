@@ -12,7 +12,7 @@ class BaseOptions():
 
     def initialize(self, parser):
         parser.add_argument('--dataroot', default='./data/dataset/', help='path to images (should have subfolders trainA, trainB, valA, valB, etc)')
-        parser.add_argument('--batch_size', type=int, default=1, help='input batch size')
+        parser.add_argument('--batch_size', type=int, default=2, help='input batch size')
         # Specify width and height for load and fine sizes
         parser.add_argument('--loadSizeW', type=int, default=256, help='scale images to this size (width)')
         parser.add_argument('--loadSizeH', type=int, default=256, help='scale images to this size (height)')
@@ -34,7 +34,7 @@ class BaseOptions():
         # Use unaligned_seg as a default dataset_mode
         parser.add_argument('--dataset_mode', type=str, default='sgunit_train', help='chooses how datasets are loaded. [unaligned | aligned | single]')
         # Use insta_gan as a default model
-        parser.add_argument('--model', type=str, default='stn_transfer', help='chooses which model to use. insta_gan, cycle_gan, pix2pix, test')
+        parser.add_argument('--model', type=str, default='stn', help='chooses which model to use. insta_gan, cycle_gan, pix2pix, test')
         parser.add_argument('--direction', type=str, default='AtoB', help='AtoB or BtoA')
         parser.add_argument('--epoch', type=str, default='latest', help='which epoch to load? set to latest to use latest cached model')
         parser.add_argument('--load_iter', type=int, default='0', help='which iteration to load? if load_iter > 0, the code will load models by iter_[load_iter]; otherwise, the code will load models by [epoch]')
